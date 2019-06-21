@@ -1,48 +1,52 @@
 
 
 function parseHTML(html) {
-  const {string, tree} = parseTag(html);
-  console.log(string);
-  if (string) throw new Error('Error in syntax');
+  const {rest, tree} = parseTag(html);
+  console.log(rest);
+  if (rest) throw new Error('Error in syntax');
   console.log(tree);
 }
 
-function parseTag(string, tree) {
-  string = skipSpace(string);
-  if(!string) {
-    return {tree, string};
+function parseTag(html, tree) {
+  html = skipSpace(html);
+  if(html[0] !== '<') {throw new Error('Unexpected token');}
+  if(html[1] === '/') {
+    const closeIndex = html.indexOf('>');
+    const tagName = html.slice(2, closeIndex).trim();
+    if (tagName !== tree.name) {throw new Error('Tried to close not existing tag');}
+    return {rest: html.slice(closeIndex + 1) || '', tree};
   }
-  if(string[0] !== '<') {
-    throw new Error('Unexpected token');
-  }
-  if(string[1] === '/') {
-    const closeIndex = string.indexOf('>');
-    const tagName = string.slice(2, closeIndex).trim();
-    if (tagName !== tree.name) {
-      throw new Error('Tried to close not existing tag');
-    }
-    return {string: string.slice(closeIndex + 1) || '', tree};
-  }
-  string = string.slice(1);
-  const element = {children: []};
-  const match = /^\w+/.exec(string);
-  element.name = match[0];
-  const {attributes, rest} = parseAttributes(skipSpace(string.slice(match[0].length)));
-  attributes.forEach((attr) => element[attr.attrName] = attr.attrVal);
+  html = html.slice(1);
 
-  string = skipSpace(rest);
-  while(string.indexOf(`</${element.name}>`) !== 0 && string.length) {
-    // if(string[0] !== '<') {
-    //   const openIndex = string.indexOf('<');
-    //   element.children.push(new TextNode(string.slice(0, openIndex)));
-    //   string = string.slice(openIndex);
-    // }
-    const {tree: newTree, string: rest} = parseTag(string, element);
-    if(newTree !== element) {element.children.push(newTree);}
-    string = skipSpace(rest);
+  const element = {children: []};
+  const match = /^\w+/.exec(html);
+  element.name = match[0];
+  html = skipSpace(html.slice(match[0].length));
+  const {attributes, rest} = parseAttributes(html);
+  attributes.forEach((attr) => element[attr.attrName] = attr.attrVal);
+  html = rest;
+
+  while(html.indexOf(`</${element.name}>`) !== 0 && html.length) {
+    const {rest: restHtml, elem: textElem} = parseText(html);
+    html = restHtml;
+    if(textElem) {
+      element.children.push(textElem);
+      continue;
+    }
+
+    const {tree: child, rest: rest} = parseTag(html, element);
+    element.children.push(child);
+    html = skipSpace(rest);
   }
-  if(string.length === 0) {throw new Error('Not closed tag');}
-  return parseTag(string, element);
+
+  if(html.length === 0) {throw new Error('Not closed tag');}
+  return parseTag(html, element);
+}
+
+function parseText(html) {
+  const bracketIndex = html.indexOf('<');
+  const text = html.slice(0, bracketIndex);
+  return {rest: html.slice(bracketIndex), elem: text ? new TextNode(text) : null};
 }
 
 class TextNode {
@@ -53,9 +57,9 @@ class TextNode {
 
 const attributeDelimiter = '=';
 
-function parseAttributes(string) {
-  const closeIndex = string.indexOf('>');
-  const inner = string.slice(0, closeIndex);
+function parseAttributes(html) {
+  const closeIndex = html.indexOf('>');
+  const inner = html.slice(0, closeIndex);
   const attributesMatch = /\w+="\w+"/g.exec(inner);
   const attributes = (attributesMatch || []).map((attrMatch) => {
     const delimiterIndex = attrMatch.indexOf(attributeDelimiter);
@@ -63,7 +67,7 @@ function parseAttributes(string) {
     const attrVal = skipSpace(skipSpace(attrMatch.slice(delimiterIndex + 1)).slice(1, -1));
     return {attrName, attrVal};
   });
-  return {rest: string.slice(closeIndex + 1), attributes};
+  return {rest: skipSpace(html.slice(closeIndex + 1)), attributes};
 }
 
 function skipSpace(string) {
@@ -72,20 +76,7 @@ function skipSpace(string) {
 
 parseHTML(
 `
-<body>
-<hui>
-<span></span>
-<span></span>
-<span></span>
-<span></span>
-</hui>
+<body>   kek<a><div></div>LOL</a>
 </body>
 `
 );
-// <div class="kek" id="hui">
-//   <a>
-//   <a></a>
-//   </a>
-//   <div><asssd><div></div></aasdsdsssd></div>
-// <div><span></span></div>
-// </div>
