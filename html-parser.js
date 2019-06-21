@@ -30,9 +30,6 @@ function parseTag(string, tree) {
   const {attributes, rest} = parseAttributes(skipSpace(string.slice(match[0].length)));
   attributes.forEach((attr) => element[attr.attrName] = attr.attrVal);
 
-  if(tree) {tree.children.push(element)}
-  else { tree = element; }
-
   string = skipSpace(rest);
   while(string.indexOf(`</${element.name}>`) !== 0 && string.length) {
     // if(string[0] !== '<') {
@@ -41,14 +38,10 @@ function parseTag(string, tree) {
     //   string = string.slice(openIndex);
     // }
     const {tree: newTree, string: rest} = parseTag(string, element);
-    if(newTree !== element) {
-      element.children.push(newTree);
-    }
+    if(newTree !== element) {element.children.push(newTree);}
     string = skipSpace(rest);
   }
-  if(string.length === 0) {
-    throw new Error('Not closed tag');
-  }
+  if(string.length === 0) {throw new Error('Not closed tag');}
   return parseTag(string, element);
 }
 
@@ -79,7 +72,14 @@ function skipSpace(string) {
 
 parseHTML(
 `
-<div><a></a></div>
+<body>
+<hui>
+<span></span>
+<span></span>
+<span></span>
+<span></span>
+</hui>
+</body>
 `
 );
 // <div class="kek" id="hui">
