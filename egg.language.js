@@ -245,7 +245,8 @@ function compileFunctionCall(ast) {
 
 const specialFormCompileMatcher = {
   do: function compileDo(ast) {
-    return ast.args.map((arg) => `${compileExpression(arg)};`).join('\n');
+    const arr =  ast.args.map((arg) => `${compileExpression(arg)};`);
+    return arr.join('\n');
   },
   define: function compileDefine(ast) {
     return `var ${ast.args[0].name} = ${compileExpression(ast.args[1])}`
@@ -269,6 +270,9 @@ const specialFormCompileMatcher = {
   },
   if: function compileIf(ast) {
     return `${compileExpression(ast.args[0])} ? ${compileExpression(ast.args[1])} : ${compileExpression(ast.args[2])}`;
+  },
+  while: function compileWhile(ast) {
+    return `while(${compileExpression(ast.args[0])}){\n` + compileExpression(ast.args[1]) + `\n}`
   }
 };
 
@@ -296,15 +300,18 @@ function getCompiled(program) {
 
 const program = `
   do(
-      define(logDecorator, 3)
+      define(sum, 0),
+      define(counter, 1),
+      while(<(counter, 11), 
+        do(
+          set(sum, +(sum, counter)),
+          set(counter, +(counter, 1))
+        )  
+      ),
+      print(sum)
     )
 `;
-
-// const compiled = getCompiled(program);
-// console.log(compiled);
-// eval(compiled);
-run(program);
-
+console.log(getCompiled(program));
 
 // console.log(getCompiled(`
 // do(
