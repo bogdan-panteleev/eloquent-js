@@ -34,15 +34,16 @@ function buildGraph(edges) {
 const roadGraph = buildGraph(roads);
 
 console.log(roadGraph);
-console.log('routes: ', getRouts("Alice's House", "Grete's House", roadGraph));
+console.log('routes: ', getRouts('Cabin', "Grete's House", roadGraph));
 
 function getRouts(from, to, graph) {
-	if (Object.keys(graph).length === 1 || graph[from] === undefined) return [from, null];
+	if (Object.keys(graph).length === 1 || graph[from] === undefined) return [[from, null]];
 	if (graph[from].includes(to)) return [[from, to]];
 
-	const routes = graph[from].map((next) => {
-		return [from].concat(getRouts(next, to, removePlace(from, graph)));
-	});
+	const routes = graph[from]
+		.map((next) => getRouts(next, to, removePlace(from, graph)).map((route) => [from].concat(route)))
+		.flat();
+
 	return routes.filter((r) => r[r.length - 1] !== null);
 }
 
@@ -58,26 +59,6 @@ function removePlace(place, roadGraph) {
 	return roadGraphCopy;
 }
 
-class VillageState {
-	constructor(place, parcels) {
-		this.place = place;
-		this.parcels = parcels;
-	}
-
-	move(destination) {
-		if (!roadGraph[this.place].includes(destination)) {
-			return this;
-		} else {
-			let parcels = this.parcels
-				.map((p) => {
-					if (p.place != this.place) return p;
-					return { place: destination, address: p.address };
-				})
-				.filter((p) => p.place != p.address);
-			return new VillageState(destination, parcels);
-		}
-	}
-}
 // 'use strict';
 // // test: no
 //
