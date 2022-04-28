@@ -3,13 +3,7 @@ const level = `
 #.........#
 #..o......#
 #.#####...#
-#.........#
-#.........#
-#.........#
 #.@.......#
-#.........#
-#.........#
-#.........#
 #.........#
 ###########
 `;
@@ -20,16 +14,18 @@ class Game {
 	static jumpStrength = 20;
 	static horizontalSpeed = 8;
 
-	constructor(map, player) {
+	constructor(map, player, coins) {
 		if (map) {
 			this.staticMap = map;
 		}
 		if (player) {
 			this.player = player;
 		}
+		this.coins = coins || [];
 	}
 	tick(time) {
-		return new Game(this.staticMap, this.playerTick(time));
+		const newPlayerState = this.playerTick(time);
+		return new Game(this.staticMap, newPlayerState, this.gatherCoins(newPlayerState));
 	}
 	parse(level) {
 		this.staticMap = level
@@ -44,9 +40,12 @@ class Game {
 							speedX: 0,
 							direction: 'ltr',
 							speedY: 0.1,
-							size: { width: 1.5, height: 1.2 },
+							size: { width: 0.5, height: 1.2 },
 						};
 						return '.';
+					}
+					if (item === 'o') {
+						this.coins.push({ x: x + 0.5, y: y + 0.5, radius: 0.25 });
 					}
 					return item;
 				})
@@ -71,42 +70,50 @@ class Game {
 	}
 	playerTick(time) {
 		let movedPlayer = this.movedPlayer(time);
+		const movedHorizontally = { ...movedPlayer, y: this.player.y };
+		const movedVertically = { ...movedPlayer, x: this.player.x };
 
-		if (this.preventsMove(movedPlayer, 'bottom')) {
+		if (this.preventsMove(movedVertically, 'bottom')) {
 			movedPlayer = {
 				...movedPlayer,
 				y: Math.floor(movedPlayer.y + this.player.size.height) - this.player.size.height,
 				speedY: 0,
 			};
-			console.log('stop bottom');
 		}
-		if (this.preventsMove(movedPlayer, 'top')) {
+		if (this.preventsMove(movedVertically, 'top')) {
 			movedPlayer = {
 				...movedPlayer,
 				y: Math.ceil(movedPlayer.y),
 				speedY: 0,
 			};
-			console.log('stop top');
 		}
 
-		if (this.preventsMove(movedPlayer, 'right')) {
+		if (this.preventsMove(movedHorizontally, 'right')) {
 			movedPlayer = {
 				...movedPlayer,
 				x: Math.floor(movedPlayer.x + movedPlayer.size.width) - movedPlayer.size.width,
 				speedX: 0,
 			};
-			console.log('stop right');
 		}
-		if (this.preventsMove(movedPlayer, 'left')) {
+		if (this.preventsMove(movedHorizontally, 'left')) {
 			movedPlayer = {
 				...movedPlayer,
 				x: Math.ceil(movedPlayer.x),
 				speedX: 0,
 			};
-			console.log('stop left');
 		}
 
 		return movedPlayer;
+	}
+	gatherCoins(player) {
+		return this.coins.filter((coin) => !this.isCoinGathered(player, coin));
+	}
+	isCoinGathered(player, coin) {
+		const distance = Math.sqrt(
+			Math.pow(player.x + player.size.width / 2 - coin.x, 2) +
+				Math.pow(player.y + player.size.height / 2 - coin.y, 2)
+		);
+		return distance <= coin.radius;
 	}
 	preventsMove(newPlayer, direction) {
 		if (direction === 'bottom') {
@@ -147,17 +154,31 @@ class Game {
 		if (direction === 'right') {
 			const rightYSquares = range(Math.floor(newPlayer.y), Math.ceil(newPlayer.y + newPlayer.size.height));
 			const xRight = Math.floor(newPlayer.x + newPlayer.size.width);
-			return rightYSquares.some((square) => {
-				const result =
+			return rightYSquares.some(
+				(square) =>
 					this.staticMap[square][xRight] === '#' &&
 					this.overlaps(newPlayer, {
 						y: square,
 						x: xRight,
 						width: 1,
 						height: 1,
-					});
-				return result;
-			});
+					})
+			);
+		}
+
+		if (direction === 'left') {
+			const leftYSquares = range(Math.floor(newPlayer.y), Math.ceil(newPlayer.y + newPlayer.size.height));
+			const xLeft = Math.floor(newPlayer.x);
+			return leftYSquares.some(
+				(square) =>
+					this.staticMap[square][xLeft] === '#' &&
+					this.overlaps(newPlayer, {
+						y: square,
+						x: xLeft,
+						width: 1,
+						height: 1,
+					})
+			);
 		}
 
 		return false;
@@ -178,7 +199,6 @@ class Game {
 		}
 	}
 	movePlayer(direction) {
-		console.log('move: ', direction);
 		this.player = { ...this.player, direction, speedX: Game.horizontalSpeed };
 	}
 	stopPlayer() {
@@ -260,6 +280,20 @@ function drawGame(game, canvas) {
 		game.player.size.width * Game.standardSize,
 		game.player.size.height * Game.standardSize
 	);
+
+	game.coins.forEach((coin) => {
+		ctx.beginPath();
+		ctx.arc(
+			coin.x * Game.standardSize,
+			coin.y * Game.standardSize,
+			coin.radius * Game.standardSize,
+			0,
+			2 * Math.PI,
+			false
+		);
+		ctx.fillStyle = 'black';
+		ctx.fill();
+	});
 }
 
 function range(from, to) {
