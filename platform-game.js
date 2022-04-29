@@ -1,18 +1,25 @@
 const level = `
 ###########
 #.........#
-#..o......#
-#.#####...#
-#.@.......#
+#..o++o...#
 #.........#
+#.#####...#
+#.@..o....#
+#......o..#
+#......o..#
+#......o..#
+#......o..#
+#......o..#
 ###########
 `;
 
 class Game {
 	static standardSize = 30;
 	static gravity = 39;
-	static jumpStrength = 20;
-	static horizontalSpeed = 8;
+	static jumpStrength = 25;
+	static horizontalSpeed = 10;
+	static wobbleSpeed = 8;
+	static wobbleDist = 0.2;
 
 	constructor(map, player, coins) {
 		if (map) {
@@ -24,8 +31,7 @@ class Game {
 		this.coins = coins || [];
 	}
 	tick(time) {
-		const newPlayerState = this.playerTick(time);
-		return new Game(this.staticMap, newPlayerState, this.gatherCoins(newPlayerState));
+		return new Game(this.staticMap, this.playerTick(time), this.coinsTick(time));
 	}
 	parse(level) {
 		this.staticMap = level
@@ -40,12 +46,18 @@ class Game {
 							speedX: 0,
 							direction: 'ltr',
 							speedY: 0.1,
-							size: { width: 0.5, height: 1.2 },
+							size: { width: 0.5, height: 1 },
 						};
 						return '.';
 					}
 					if (item === 'o') {
-						this.coins.push({ x: x + 0.5, y: y + 0.5, radius: 0.25 });
+						this.coins.push({
+							baseX: x + 0.5,
+							baseY: y + 0.5,
+							radius: 0.25,
+							wobble: Math.random() * Math.PI * 2,
+						});
+						return '.';
 					}
 					return item;
 				})
@@ -68,7 +80,22 @@ class Game {
 		};
 		return movedPlayer;
 	}
+	coinsTick(time) {
+		const updatedCoins = this.coins.map((coin) => {
+			const wobble = coin.wobble + time * Game.wobbleSpeed;
+			return {
+				...coin,
+				x: coin.baseX + Math.cos(wobble) * Game.wobbleDist,
+				y: coin.baseY + Math.sin(wobble) * Game.wobbleDist,
+				wobble,
+			};
+		});
+		return this.gatherCoins(updatedCoins);
+	}
 	playerTick(time) {
+		if (this.player.dead) {
+			return this.player;
+		}
 		let movedPlayer = this.movedPlayer(time);
 		const movedHorizontally = { ...movedPlayer, y: this.player.y };
 		const movedVertically = { ...movedPlayer, x: this.player.x };
@@ -92,28 +119,40 @@ class Game {
 			movedPlayer = {
 				...movedPlayer,
 				x: Math.floor(movedPlayer.x + movedPlayer.size.width) - movedPlayer.size.width,
-				speedX: 0,
+				// speedX: 0,
 			};
 		}
 		if (this.preventsMove(movedHorizontally, 'left')) {
 			movedPlayer = {
 				...movedPlayer,
 				x: Math.ceil(movedPlayer.x),
-				speedX: 0,
+				// speedX: 0,
 			};
+		}
+
+		if (this.inLava(movedPlayer)) {
+			movedPlayer = { ...movedPlayer, dead: true };
 		}
 
 		return movedPlayer;
 	}
-	gatherCoins(player) {
-		return this.coins.filter((coin) => !this.isCoinGathered(player, coin));
+	inLava(player) {
+		return range(Math.floor(player.y), Math.ceil(player.y + player.size.height)).some((y) => {
+			return range(Math.floor(player.x), Math.ceil(player.x + player.size.width)).some(
+				(x) => this.staticMap[y][x] === '+' && this.overlaps(player, { x, y, width: 1, height: 1 })
+			);
+		});
+	}
+
+	gatherCoins(coins) {
+		return coins.filter((coin) => !this.isCoinGathered(this.player, coin));
 	}
 	isCoinGathered(player, coin) {
 		const distance = Math.sqrt(
 			Math.pow(player.x + player.size.width / 2 - coin.x, 2) +
 				Math.pow(player.y + player.size.height / 2 - coin.y, 2)
 		);
-		return distance <= coin.radius;
+		return distance <= coin.radius * 1.3;
 	}
 	preventsMove(newPlayer, direction) {
 		if (direction === 'bottom') {
@@ -270,16 +309,22 @@ function drawGame(game, canvas) {
 				ctx.fillStyle = 'black';
 				ctx.fillRect(x * Game.standardSize, y * Game.standardSize, Game.standardSize, Game.standardSize);
 			}
+			if (item === '+') {
+				ctx.fillStyle = 'red';
+				ctx.fillRect(x * Game.standardSize, y * Game.standardSize, Game.standardSize, Game.standardSize);
+			}
 		});
 	});
 
-	ctx.fillStyle = 'blue';
-	ctx.fillRect(
-		game.player.x * Game.standardSize,
-		game.player.y * Game.standardSize,
-		game.player.size.width * Game.standardSize,
-		game.player.size.height * Game.standardSize
-	);
+	if (!game.player.dead) {
+		ctx.fillStyle = 'blue';
+		ctx.fillRect(
+			game.player.x * Game.standardSize,
+			game.player.y * Game.standardSize,
+			game.player.size.width * Game.standardSize,
+			game.player.size.height * Game.standardSize
+		);
+	}
 
 	game.coins.forEach((coin) => {
 		ctx.beginPath();
