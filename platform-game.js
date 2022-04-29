@@ -1,159 +1,96 @@
 const level = `
-###########
-#.........#
-#..o++o...#
-#.........#
-#.#####...#
-#.@..o....#
-#......o..#
-#......o..#
-#......o..#
-#......o..#
-#......o..#
-###########
+......................
+..#................#..
+..#................#..
+..#.........o.o....#..
+..#................#..
+..#####............#..
+......#......@.....#..
+......##############..
+......................
 `;
 
-class Game {
-	static standardSize = 30;
-	static gravity = 39;
-	static jumpStrength = 25;
-	static horizontalSpeed = 10;
-	static wobbleSpeed = 8;
-	static wobbleDist = 0.2;
+class Player {
+	constructor({ staticMap, x, y, speedX, direction, speedY, size }) {
+		this.staticMap = staticMap;
+		this.x = x;
+		this.y = y;
+		this.speedX = speedX;
+		this.direction = direction;
+		this.speedY = speedY;
+		this.size = size;
+	}
 
-	constructor(map, player, coins) {
-		if (map) {
-			this.staticMap = map;
-		}
-		if (player) {
-			this.player = player;
-		}
-		this.coins = coins || [];
-	}
-	tick(time) {
-		return new Game(this.staticMap, this.playerTick(time), this.coinsTick(time));
-	}
-	parse(level) {
-		this.staticMap = level
-			.split('\n')
-			.filter((row) => row.trim())
-			.map((str, y) =>
-				str.split('').map((item, x) => {
-					if (item === '@') {
-						this.player = {
-							x,
-							y: y - 1 / 1.2,
-							speedX: 0,
-							direction: 'ltr',
-							speedY: 0.1,
-							size: { width: 0.5, height: 1 },
-						};
-						return '.';
-					}
-					if (item === 'o') {
-						this.coins.push({
-							baseX: x + 0.5,
-							baseY: y + 0.5,
-							radius: 0.25,
-							wobble: Math.random() * Math.PI * 2,
-						});
-						return '.';
-					}
-					return item;
-				})
-			);
-		return this;
-	}
-	movedPlayer(time) {
-		const newSpeedY = this.player.speedY + time * Game.gravity;
-		const newY = this.player.y + time * newSpeedY;
-
-		const xChange = time * this.player.speedX * (this.player.direction === 'ltr' ? 1 : -1);
-		const newX = this.player.x + xChange;
-
-		let movedPlayer = {
-			...this.player,
-			x: newX,
-			y: newY,
-			speedY: newSpeedY,
-			direction: this.player.direction,
-		};
-		return movedPlayer;
-	}
-	coinsTick(time) {
-		const updatedCoins = this.coins.map((coin) => {
-			const wobble = coin.wobble + time * Game.wobbleSpeed;
-			return {
-				...coin,
-				x: coin.baseX + Math.cos(wobble) * Game.wobbleDist,
-				y: coin.baseY + Math.sin(wobble) * Game.wobbleDist,
-				wobble,
-			};
+	patch(changes) {
+		return new Player({
+			staticMap: this.staticMap,
+			x: this.x,
+			y: this.y,
+			speedX: this.speedX,
+			direction: this.direction,
+			speedY: this.speedY,
+			size: this.size,
+			...changes,
 		});
-		return this.gatherCoins(updatedCoins);
 	}
-	playerTick(time) {
-		if (this.player.dead) {
-			return this.player;
+
+	die() {
+		this.dead = true;
+	}
+
+	tick(time) {
+		if (this.dead) {
+			return this;
 		}
-		let movedPlayer = this.movedPlayer(time);
-		const movedHorizontally = { ...movedPlayer, y: this.player.y };
-		const movedVertically = { ...movedPlayer, x: this.player.x };
+		let movedPlayer = this.move(time);
+		const movedHorizontally = this.patch({ ...movedPlayer, y: this.y });
+		const movedVertically = this.patch({ ...movedPlayer, x: this.x });
 
 		if (this.preventsMove(movedVertically, 'bottom')) {
-			movedPlayer = {
+			movedPlayer = this.patch({
 				...movedPlayer,
-				y: Math.floor(movedPlayer.y + this.player.size.height) - this.player.size.height,
+				y: Math.floor(movedPlayer.y + this.size.height) - this.size.height,
 				speedY: 0,
-			};
+			});
 		}
 		if (this.preventsMove(movedVertically, 'top')) {
-			movedPlayer = {
+			movedPlayer = this.patch({
 				...movedPlayer,
 				y: Math.ceil(movedPlayer.y),
 				speedY: 0,
-			};
+			});
 		}
 
 		if (this.preventsMove(movedHorizontally, 'right')) {
-			movedPlayer = {
+			movedPlayer = this.patch({
 				...movedPlayer,
 				x: Math.floor(movedPlayer.x + movedPlayer.size.width) - movedPlayer.size.width,
-				// speedX: 0,
-			};
+			});
 		}
 		if (this.preventsMove(movedHorizontally, 'left')) {
-			movedPlayer = {
+			movedPlayer = this.patch({
 				...movedPlayer,
 				x: Math.ceil(movedPlayer.x),
-				// speedX: 0,
-			};
+			});
 		}
 
 		if (this.inLava(movedPlayer)) {
-			movedPlayer = { ...movedPlayer, dead: true };
+			movedPlayer.die();
 		}
 
 		return movedPlayer;
 	}
-	inLava(player) {
-		return range(Math.floor(player.y), Math.ceil(player.y + player.size.height)).some((y) => {
-			return range(Math.floor(player.x), Math.ceil(player.x + player.size.width)).some(
-				(x) => this.staticMap[y][x] === '+' && this.overlaps(player, { x, y, width: 1, height: 1 })
-			);
-		});
+
+	move(time) {
+		const newSpeedY = this.speedY + time * Game.gravity;
+		const newY = this.y + time * newSpeedY;
+
+		const xChange = time * this.speedX * (this.direction === 'ltr' ? 1 : -1);
+		const newX = this.x + xChange;
+
+		return this.patch({ x: newX, y: newY, speedY: newSpeedY });
 	}
 
-	gatherCoins(coins) {
-		return coins.filter((coin) => !this.isCoinGathered(this.player, coin));
-	}
-	isCoinGathered(player, coin) {
-		const distance = Math.sqrt(
-			Math.pow(player.x + player.size.width / 2 - coin.x, 2) +
-				Math.pow(player.y + player.size.height / 2 - coin.y, 2)
-		);
-		return distance <= coin.radius * 1.3;
-	}
 	preventsMove(newPlayer, direction) {
 		if (direction === 'bottom') {
 			const yBottom = Math.floor(newPlayer.y + newPlayer.size.height);
@@ -222,6 +159,7 @@ class Game {
 
 		return false;
 	}
+
 	overlaps(player, { x, y, width, height }) {
 		function lineOverlaps(first, second) {
 			return second.start < first.end || first.end > second.start;
@@ -232,23 +170,131 @@ class Game {
 		);
 	}
 
+	inLava(player) {
+		return range(Math.floor(player.y), Math.ceil(player.y + player.size.height)).some((y) => {
+			return range(Math.floor(player.x), Math.ceil(player.x + player.size.width)).some(
+				(x) => this.staticMap[y][x] === '+' && this.overlaps(player, { x, y, width: 1, height: 1 })
+			);
+		});
+	}
+
 	jump() {
-		if (this.preventsMove(this.movedPlayer(this.pass(5)), 'bottom')) {
-			this.player = { ...this.player, speedY: -Game.jumpStrength };
+		if (this.preventsMove(this.move(Game.pass(5)), 'bottom')) {
+			this.speedY = -Game.jumpStrength;
 		}
 	}
-	movePlayer(direction) {
-		this.player = { ...this.player, direction, speedX: Game.horizontalSpeed };
+
+	go(direction) {
+		this.direction = direction;
+		this.speedX = Game.horizontalSpeed;
 	}
-	stopPlayer() {
-		this.player = { ...this.player, speedX: 0 };
-	}
-	pass(time) {
-		return time / 1000;
+	stop() {
+		this.speedX = 0;
 	}
 }
 
-runGame(new Game().parse(level));
+class Coin {
+	static create(x, y) {
+		return new Coin(x, y);
+	}
+	constructor(baseX, baseY, x, y, wobble) {
+		this.baseX = baseX;
+		this.baseY = baseY;
+		this.radius = 0.25;
+		this.wobble = wobble || Math.random() * Math.PI * 2;
+		this.x = x || baseX;
+		this.y = y || baseY;
+	}
+	tick(time) {
+		const wobble = this.wobble + time * Game.wobbleSpeed;
+		return new Coin(
+			this.baseX,
+			this.baseY,
+			this.baseX + Math.cos(wobble) * Game.wobbleDist,
+			this.baseY + Math.sin(wobble) * Game.wobbleDist,
+			wobble
+		);
+	}
+}
+
+class Game {
+	static standardSize = 30;
+	static gravity = 39;
+	static jumpStrength = 15;
+	static horizontalSpeed = 7;
+	static wobbleSpeed = 8;
+	static wobbleDist = 0.2;
+
+	static pass(time) {
+		return time / 1000;
+	}
+
+	static parse(level) {
+		const coins = [];
+		let playerX;
+		let playerY;
+		const staticMap = level
+			.split('\n')
+			.filter((row) => row.trim())
+			.map((str, y) =>
+				str.split('').map((item, x) => {
+					if (item === '@') {
+						playerX = x;
+						playerY = y;
+						return '.';
+					}
+					if (item === 'o') {
+						coins.push({
+							baseX: x + 0.5,
+							baseY: y + 0.5,
+						});
+						return '.';
+					}
+					return item;
+				})
+			);
+		return new Game(
+			staticMap,
+			new Player({
+				staticMap: staticMap,
+				x: playerX,
+				y: playerY,
+				speedX: 0,
+				direction: 'ltr',
+				speedY: 0.1,
+				size: { width: 0.5, height: 1 },
+			}),
+			coins.map((coin) => Coin.create(coin.baseX, coin.baseY))
+		);
+	}
+
+	constructor(map, player, coins) {
+		this.staticMap = map;
+		this.player = player;
+		this.coins = coins;
+	}
+
+	tick(time) {
+		return new Game(this.staticMap, this.player.tick(time), this.coinsTick(time));
+	}
+	coinsTick(time) {
+		const updatedCoins = this.coins.map((coin) => coin.tick(time));
+		return this.gatherCoins(updatedCoins);
+	}
+
+	gatherCoins(coins) {
+		return coins.filter((coin) => !this.isCoinGathered(this.player, coin));
+	}
+	isCoinGathered(player, coin) {
+		const distance = Math.sqrt(
+			Math.pow(player.x + player.size.width / 2 - coin.x, 2) +
+				Math.pow(player.y + player.size.height / 2 - coin.y, 2)
+		);
+		return distance <= coin.radius * 1.3;
+	}
+}
+
+runGame(Game.parse(level));
 
 function runGame(currentGame) {
 	const standardSize = Game.standardSize;
@@ -259,27 +305,27 @@ function runGame(currentGame) {
 	document.body.append(canvas);
 	document.body.addEventListener('keydown', (event) => {
 		if (event.key === 'ArrowUp') {
-			currentGame.jump();
+			currentGame.player.jump();
 		}
 	});
 	document.body.addEventListener('keydown', (event) => {
 		if (event.key === 'ArrowRight') {
-			currentGame.movePlayer('ltr');
+			currentGame.player.go('ltr');
 		}
 	});
 	document.body.addEventListener('keyup', (event) => {
 		if (event.key === 'ArrowRight') {
-			currentGame.stopPlayer();
+			currentGame.player.stop();
 		}
 	});
 	document.body.addEventListener('keydown', (event) => {
 		if (event.key === 'ArrowLeft') {
-			currentGame.movePlayer('rtl');
+			currentGame.player.go('rtl');
 		}
 	});
 	document.body.addEventListener('keyup', (event) => {
 		if (event.key === 'ArrowLeft') {
-			currentGame.stopPlayer();
+			currentGame.player.stop();
 		}
 	});
 
@@ -292,7 +338,7 @@ function runGame(currentGame) {
 		requestAnimationFrame(() => {
 			const now = new Date();
 			const time = now - then > 20 ? 20 : now - then;
-			currentGame = game.tick(game.pass(time));
+			currentGame = game.tick(Game.pass(time));
 			makeStep(currentGame, canvas);
 		});
 	}
