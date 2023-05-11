@@ -1,11 +1,18 @@
 const level = `
 ......................
+......................
+......................
+......................
+......................
+......................
+......................
+......................
 ..#................#..
 ..#................#..
 ..#.........o.o....#..
-..#................#..
+..#..........=.....#..
 ..#####............#..
-......#......@.....#..
+......#++++..@.....#..
 ......##############..
 ......................
 `;
@@ -38,7 +45,7 @@ class Player {
 		this.dead = true;
 	}
 
-	tick(time) {
+	tick(time, game) {
 		if (this.dead) {
 			return this;
 		}
@@ -46,14 +53,14 @@ class Player {
 		const movedHorizontally = this.patch({ ...movedPlayer, y: this.y });
 		const movedVertically = this.patch({ ...movedPlayer, x: this.x });
 
-		if (this.preventsMove(movedVertically, 'bottom')) {
+		if (game.preventsMove(movedVertically, 'bottom')) {
 			movedPlayer = this.patch({
 				...movedPlayer,
 				y: Math.floor(movedPlayer.y + this.size.height) - this.size.height,
 				speedY: 0,
 			});
 		}
-		if (this.preventsMove(movedVertically, 'top')) {
+		if (game.preventsMove(movedVertically, 'top')) {
 			movedPlayer = this.patch({
 				...movedPlayer,
 				y: Math.ceil(movedPlayer.y),
@@ -61,20 +68,20 @@ class Player {
 			});
 		}
 
-		if (this.preventsMove(movedHorizontally, 'right')) {
+		if (game.preventsMove(movedHorizontally, 'right')) {
 			movedPlayer = this.patch({
 				...movedPlayer,
 				x: Math.floor(movedPlayer.x + movedPlayer.size.width) - movedPlayer.size.width,
 			});
 		}
-		if (this.preventsMove(movedHorizontally, 'left')) {
+		if (game.preventsMove(movedHorizontally, 'left')) {
 			movedPlayer = this.patch({
 				...movedPlayer,
 				x: Math.ceil(movedPlayer.x),
 			});
 		}
 
-		if (this.inLava(movedPlayer)) {
+		if (this.inLava(movedPlayer, game)) {
 			movedPlayer.die();
 		}
 
@@ -91,6 +98,176 @@ class Player {
 		return this.patch({ x: newX, y: newY, speedY: newSpeedY });
 	}
 
+	inLava(player, game) {
+		const first = range(Math.floor(player.y), Math.ceil(player.y + player.size.height)).some((y) => {
+			return range(Math.floor(player.x), Math.ceil(player.x + player.size.width)).some(
+				(x) => this.staticMap[y][x] === '+' && game.overlaps(player, { x, y, width: 1, height: 1 })
+			);
+		});
+		const second = game.lava.some((lava) =>
+			game.overlaps(player, { x: lava.x, y: lava.y, width: lava.size.width, height: lava.size.height })
+		);
+
+		return first || second;
+	}
+
+	jump(game) {
+		if (game.preventsMove(this.move(Game.pass(5)), 'bottom')) {
+			this.speedY = -Game.jumpStrength;
+		}
+	}
+
+	go(direction) {
+		this.direction = direction;
+		this.speedX = Game.horizontalSpeed;
+	}
+	stop() {
+		this.speedX = 0;
+	}
+}
+
+class Coin {
+	static create(x, y) {
+		return new Coin(x, y);
+	}
+	constructor(baseX, baseY, x, y, wobble) {
+		this.baseX = baseX;
+		this.baseY = baseY;
+		this.radius = 0.25;
+		this.wobble = wobble || Math.random() * Math.PI * 2;
+		this.x = x || baseX;
+		this.y = y || baseY;
+	}
+	tick(time) {
+		const wobble = this.wobble + time * Game.wobbleSpeed;
+		return new Coin(
+			this.baseX,
+			this.baseY,
+			this.baseX + Math.cos(wobble) * Game.wobbleDist,
+			this.baseY + Math.sin(wobble) * Game.wobbleDist,
+			wobble
+		);
+	}
+}
+
+class Lava {
+	static create(x, y) {
+		return new Lava(x, y, 'rtl');
+	}
+	constructor(x, y, direction) {
+		this.x = x;
+		this.y = y;
+		this.size = { width: 4, height: 1 };
+		this.direction = direction;
+		this.speed = Game.horizontalSpeed;
+	}
+
+	move(time) {
+		const xChange = time * this.speed;
+		const newX = this.x + xChange * (this.direction === 'rtl' ? 1 : -1);
+		return new Lava(newX, this.y, this.direction);
+	}
+
+	changeDirection(dir) {
+		return new Lava(this.x, this.y, dir);
+	}
+
+	tick(time, game) {
+		const moved = this.move(time);
+		const direction = this.direction === 'rtl' ? 'right' : 'left';
+		if (game.preventsMove(moved, direction)) {
+			return this.changeDirection(this.direction === 'rtl' ? 'ltr' : 'rtl').move(time);
+		}
+		return moved;
+	}
+}
+
+class Game {
+	static standardSize = 30;
+	static gravity = 39;
+	static jumpStrength = 19;
+	static horizontalSpeed = 7;
+	static wobbleSpeed = 8;
+	static wobbleDist = 0.2;
+
+	static pass(time) {
+		return time / 1000;
+	}
+
+	static parse(level) {
+		const coins = [];
+		const lava = [];
+		let playerX;
+		let playerY;
+		const staticMap = level
+			.split('\n')
+			.filter((row) => row.trim())
+			.map((str, y) =>
+				str.split('').map((item, x) => {
+					if (item === '@') {
+						playerX = x;
+						playerY = y;
+						return '.';
+					}
+					if (item === 'o') {
+						coins.push({
+							baseX: x + 0.5,
+							baseY: y + 0.5,
+						});
+						return '.';
+					}
+					if (item === '=') {
+						lava.push({ x, y });
+					}
+					return item;
+				})
+			);
+		return new Game(
+			staticMap,
+			new Player({
+				staticMap: staticMap,
+				x: playerX,
+				y: playerY,
+				speedX: 0,
+				direction: 'ltr',
+				speedY: 0.1,
+				size: { width: 0.5, height: 1 },
+			}),
+			coins.map((coin) => Coin.create(coin.baseX, coin.baseY)),
+			lava.map((lava) => Lava.create(lava.x, lava.y))
+		);
+	}
+
+	constructor(map, player, coins, lava) {
+		this.staticMap = map;
+		this.player = player;
+		this.coins = coins;
+		this.lava = lava;
+	}
+
+	tick(time) {
+		return new Game(
+			this.staticMap,
+			this.player.tick(time, this),
+			this.coinsTick(time),
+			this.lava.map((lava) => lava.tick(time, this))
+		);
+	}
+	coinsTick(time) {
+		const updatedCoins = this.coins.map((coin) => coin.tick(time));
+		return this.gatherCoins(updatedCoins);
+	}
+
+	gatherCoins(coins) {
+		return coins.filter((coin) => !this.isCoinGathered(this.player, coin));
+	}
+	isCoinGathered(player, coin) {
+		const distance = Math.sqrt(
+			Math.pow(player.x + player.size.width / 2 - coin.x, 2) +
+				Math.pow(player.y + player.size.height / 2 - coin.y, 2)
+		);
+		return distance <= coin.radius * 1.3;
+	}
 	preventsMove(newPlayer, direction) {
 		if (direction === 'bottom') {
 			const yBottom = Math.floor(newPlayer.y + newPlayer.size.height);
@@ -162,135 +339,15 @@ class Player {
 
 	overlaps(player, { x, y, width, height }) {
 		function lineOverlaps(first, second) {
-			return second.start < first.end || first.end > second.start;
+			return (
+				(second.start < first.end && second.end > first.start) ||
+				(first.end > second.start && first.start < second.end)
+			);
 		}
 		return (
 			lineOverlaps({ start: player.x, end: player.x + player.size.width }, { start: x, end: x + width }) &&
 			lineOverlaps({ start: player.y, end: player.y + player.size.height }, { start: y, end: y + height })
 		);
-	}
-
-	inLava(player) {
-		return range(Math.floor(player.y), Math.ceil(player.y + player.size.height)).some((y) => {
-			return range(Math.floor(player.x), Math.ceil(player.x + player.size.width)).some(
-				(x) => this.staticMap[y][x] === '+' && this.overlaps(player, { x, y, width: 1, height: 1 })
-			);
-		});
-	}
-
-	jump() {
-		if (this.preventsMove(this.move(Game.pass(5)), 'bottom')) {
-			this.speedY = -Game.jumpStrength;
-		}
-	}
-
-	go(direction) {
-		this.direction = direction;
-		this.speedX = Game.horizontalSpeed;
-	}
-	stop() {
-		this.speedX = 0;
-	}
-}
-
-class Coin {
-	static create(x, y) {
-		return new Coin(x, y);
-	}
-	constructor(baseX, baseY, x, y, wobble) {
-		this.baseX = baseX;
-		this.baseY = baseY;
-		this.radius = 0.25;
-		this.wobble = wobble || Math.random() * Math.PI * 2;
-		this.x = x || baseX;
-		this.y = y || baseY;
-	}
-	tick(time) {
-		const wobble = this.wobble + time * Game.wobbleSpeed;
-		return new Coin(
-			this.baseX,
-			this.baseY,
-			this.baseX + Math.cos(wobble) * Game.wobbleDist,
-			this.baseY + Math.sin(wobble) * Game.wobbleDist,
-			wobble
-		);
-	}
-}
-
-class Game {
-	static standardSize = 30;
-	static gravity = 39;
-	static jumpStrength = 15;
-	static horizontalSpeed = 7;
-	static wobbleSpeed = 8;
-	static wobbleDist = 0.2;
-
-	static pass(time) {
-		return time / 1000;
-	}
-
-	static parse(level) {
-		const coins = [];
-		let playerX;
-		let playerY;
-		const staticMap = level
-			.split('\n')
-			.filter((row) => row.trim())
-			.map((str, y) =>
-				str.split('').map((item, x) => {
-					if (item === '@') {
-						playerX = x;
-						playerY = y;
-						return '.';
-					}
-					if (item === 'o') {
-						coins.push({
-							baseX: x + 0.5,
-							baseY: y + 0.5,
-						});
-						return '.';
-					}
-					return item;
-				})
-			);
-		return new Game(
-			staticMap,
-			new Player({
-				staticMap: staticMap,
-				x: playerX,
-				y: playerY,
-				speedX: 0,
-				direction: 'ltr',
-				speedY: 0.1,
-				size: { width: 0.5, height: 1 },
-			}),
-			coins.map((coin) => Coin.create(coin.baseX, coin.baseY))
-		);
-	}
-
-	constructor(map, player, coins) {
-		this.staticMap = map;
-		this.player = player;
-		this.coins = coins;
-	}
-
-	tick(time) {
-		return new Game(this.staticMap, this.player.tick(time), this.coinsTick(time));
-	}
-	coinsTick(time) {
-		const updatedCoins = this.coins.map((coin) => coin.tick(time));
-		return this.gatherCoins(updatedCoins);
-	}
-
-	gatherCoins(coins) {
-		return coins.filter((coin) => !this.isCoinGathered(this.player, coin));
-	}
-	isCoinGathered(player, coin) {
-		const distance = Math.sqrt(
-			Math.pow(player.x + player.size.width / 2 - coin.x, 2) +
-				Math.pow(player.y + player.size.height / 2 - coin.y, 2)
-		);
-		return distance <= coin.radius * 1.3;
 	}
 }
 
@@ -305,7 +362,7 @@ function runGame(currentGame) {
 	document.body.append(canvas);
 	document.body.addEventListener('keydown', (event) => {
 		if (event.key === 'ArrowUp') {
-			currentGame.player.jump();
+			currentGame.player.jump(currentGame);
 		}
 	});
 	document.body.addEventListener('keydown', (event) => {
@@ -384,6 +441,16 @@ function drawGame(game, canvas) {
 		);
 		ctx.fillStyle = 'black';
 		ctx.fill();
+	});
+
+	game.lava.forEach((lava) => {
+		ctx.fillStyle = 'red';
+		ctx.fillRect(
+			lava.x * Game.standardSize,
+			lava.y * Game.standardSize,
+			lava.size.width * Game.standardSize,
+			lava.size.height * Game.standardSize
+		);
 	});
 }
 
